@@ -4,6 +4,7 @@ local DEFAULT_SOUND = "Sound\\Interface\\RaidWarning.ogg"
 
 local frame = CreateFrame("Frame")
 local roster = {}
+local guidToName = {}
 local recentDeaths = {}
 
 local function now()
@@ -23,8 +24,22 @@ local function shortName(name)
     return base or name
 end
 
+local function normalizePath(path)
+    if not path or path == "" then
+        return path
+    end
+
+    return (path:gsub("\\\\", "\\"))
+end
+
 local function printMsg(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff00d1ffRaidRIP|r: " .. msg)
+end
+
+local function debugMsg(msg)
+    if RaidRIPDB and RaidRIPDB.debug then
+        printMsg("|cffffd200DEBUG|r " .. msg)
+    end
 end
 
 local function ensureDB()
@@ -38,12 +53,22 @@ local function ensureDB()
         RaidRIPDB.sync = true
     end
 
+    if RaidRIPDB.debug == nil then
+        RaidRIPDB.debug = false
+    end
+
     if not RaidRIPDB.defaultSound or RaidRIPDB.defaultSound == "" then
         RaidRIPDB.defaultSound = DEFAULT_SOUND
+    else
+        RaidRIPDB.defaultSound = normalizePath(RaidRIPDB.defaultSound)
     end
 
     if type(RaidRIPDB.sounds) ~= "table" then
         RaidRIPDB.sounds = {}
+    else
+        for name, path in pairs(RaidRIPDB.sounds) do
+            RaidRIPDB.sounds[name] = normalizePath(path)
+        end
     end
 
     return RaidRIPDB
@@ -61,10 +86,15 @@ end
 
 local function rebuildRoster()
     wipe(roster)
+    wipe(guidToName)
 
     local player = shortName(UnitName("player"))
     if player then
         roster[player] = true
+        local playerGuid = UnitGUID("player")
+        if playerGuid then
+            guidToName[playerGuid] = player
+        end
     end
 
     if IsInRaid and IsInRaid() then
@@ -72,7 +102,16 @@ local function rebuildRoster()
         for i = 1, count do
             local name = GetRaidRosterInfo(i)
             if name then
-                roster[shortName(name)] = true
+                local key = shortName(name)
+                if key then
+                    roster[key] = true
+                end
+
+                local unit = "raid" .. i
+                local guid = UnitGUID(unit)
+                if guid and key then
+                    guidToName[guid] = key
+                end
             end
         end
         return
@@ -84,8 +123,15 @@ local function rebuildRoster()
             local unit = "party" .. i
             if UnitExists(unit) then
                 local name = UnitName(unit)
+                local guid = UnitGUID(unit)
                 if name then
-                    roster[shortName(name)] = true
+                    local key = shortName(name)
+                    if key then
+                        roster[key] = true
+                        if guid then
+                            guidToName[guid] = key
+                        end
+                    end
                 end
             end
         end
@@ -121,19 +167,35 @@ local function getSoundForName(name)
         return DEFAULT_SOUND
     end
 
-    return db.sounds[key] or db.defaultSound or DEFAULT_SOUND
+    return normalizePath(db.sounds[key] or db.defaultSound or DEFAULT_SOUND)
 end
 
 local function playSoundForName(name)
     local sound = getSoundForName(name)
     if sound and sound ~= "" then
-        PlaySoundFile(sound)
+        debugMsg("play sound name=" .. tostring(shortName(name)) .. " file=" .. tostring(sound))
+        local played = PlaySoundFile(sound)
+        debugMsg("PlaySoundFile returned " .. tostring(played))
+    else
+        debugMsg("no sound found for name=" .. tostring(shortName(name)))
     end
 end
 
 local function trackedName(name)
     local key = shortName(name)
     return key and roster[key] or false
+end
+
+local function resolveNameFromGUID(guid, fallbackName)
+    if guid and guidToName[guid] then
+        return guidToName[guid]
+    end
+
+    if guid and UnitGUID("player") == guid then
+        return shortName(UnitName("player"))
+    end
+
+    return shortName(fallbackName)
 end
 
 local function syncDeath(name, guid)
@@ -157,12 +219,17 @@ local function syncDeath(name, guid)
 end
 
 local function handleDeath(name, guid, localEvent)
-    if not trackedName(name) then
-        return
-    end
+    local key = resolveNameFromGUID(guid, name)
 
-    local key = guid or shortName(name)
-    if not key then
+    debugMsg(
+        "resolve guid=" .. tostring(guid)
+        .. " cached=" .. tostring(guid and guidToName[guid] or nil)
+        .. " fallback=" .. tostring(shortName(name))
+        .. " resolved=" .. tostring(key)
+        .. " roster=" .. tostring(key and roster[key] or nil)
+    )
+
+    if not key or not roster[key] then
         return
     end
 
@@ -174,17 +241,32 @@ local function handleDeath(name, guid, localEvent)
 
     recentDeaths[key] = t
     cleanupRecentDeaths()
-    playSoundForName(name)
+    playSoundForName(key)
 
     if localEvent then
-        syncDeath(name, guid)
+        syncDeath(key, guid)
     end
 end
 
+local function getCombatLogData(...)
+    if CombatLogGetCurrentEventInfo then
+        return CombatLogGetCurrentEventInfo()
+    end
+
+    return ...
+end
+
 local function handleCombatLog(...)
-    local _, subevent, _, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName = ...
+    local _, subevent, _, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName = getCombatLogData(...)
 
     if subevent == "UNIT_DIED" or subevent == "PARTY_KILL" then
+        debugMsg(
+            "subevent=" .. tostring(subevent)
+            .. " source=" .. tostring(sourceName)
+            .. " dest=" .. tostring(destName)
+            .. " sourceGUID=" .. tostring(sourceGUID)
+            .. " destGUID=" .. tostring(destGUID)
+        )
         handleDeath(destName, destGUID, true)
     end
 end
@@ -203,7 +285,7 @@ local function setSound(name, path)
         return false
     end
 
-    RaidRIPDB.sounds[key] = path
+    RaidRIPDB.sounds[key] = normalizePath(path)
     return true
 end
 
@@ -274,6 +356,7 @@ local function showHelp()
     printMsg("/rds default <sound path>")
     printMsg("/rds enable | disable")
     printMsg("/rds sync on | off")
+    printMsg("/rds debug on | off")
     printMsg("/rds list")
 end
 
@@ -314,6 +397,21 @@ local function handleSlash(msg)
         return
     end
 
+    if cmd == "debug" then
+        local mode = rest:lower()
+        if mode == "on" then
+            RaidRIPDB.debug = true
+            printMsg("Debug enabled.")
+        elseif mode == "off" then
+            RaidRIPDB.debug = false
+            printMsg("Debug disabled.")
+        else
+            printMsg("Usage: /rds debug on|off")
+            printMsg("Current: " .. (RaidRIPDB.debug and "on" or "off"))
+        end
+        return
+    end
+
     if cmd == "default" then
         if rest == "" then
             printMsg("Usage: /rds default <sound path>")
@@ -321,6 +419,7 @@ local function handleSlash(msg)
         end
 
         RaidRIPDB.defaultSound = rest
+        RaidRIPDB.defaultSound = normalizePath(RaidRIPDB.defaultSound)
         printMsg("Default sound set.")
         return
     end
@@ -333,8 +432,9 @@ local function handleSlash(msg)
         end
 
         if setSound(name, path) then
-            syncMapping(name, path)
-            printMsg("Mapped " .. shortName(name) .. " to " .. path)
+            local normalized = normalizePath(path)
+            syncMapping(name, normalized)
+            printMsg("Mapped " .. shortName(name) .. " to " .. normalized)
         end
         return
     end
