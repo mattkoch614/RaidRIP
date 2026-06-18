@@ -29,6 +29,8 @@ Use:
 Useful commands:
 
 ```text
+/rds status
+/rds selftest
 /rds set Tankname Sound\Interface\RaidWarning.ogg
 /rds set Healername Sound\Spells\PVPFlagTaken.ogg
 /rds default Sound\Interface\RaidWarning.ogg
@@ -41,3 +43,4 @@ Useful commands:
 - Everyone who wants the sounds must have the addon installed and enabled.
 - The sound path must exist on the client.
 - If you want consistent raid behavior, use the same mappings on all clients.
+- `/rds selftest` is useful when you want to verify a mapping without dying.

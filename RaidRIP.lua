@@ -351,6 +351,8 @@ local function showHelp()
     printMsg("Commands:")
     printMsg("/rds help")
     printMsg("/rds test [name]")
+    printMsg("/rds selftest [name]")
+    printMsg("/rds status")
     printMsg("/rds set <name> <sound path>")
     printMsg("/rds clear <name>")
     printMsg("/rds default <sound path>")
@@ -424,6 +426,21 @@ local function handleSlash(msg)
         return
     end
 
+    if cmd == "status" then
+        printMsg("Enabled: " .. tostring(RaidRIPDB.enabled))
+        printMsg("Sync: " .. tostring(RaidRIPDB.sync))
+        printMsg("Debug: " .. tostring(RaidRIPDB.debug))
+        printMsg("Default: " .. tostring(RaidRIPDB.defaultSound))
+        printMsg("Mappings: " .. tostring((function()
+            local n = 0
+            for _ in pairs(RaidRIPDB.sounds) do
+                n = n + 1
+            end
+            return n
+        end)()))
+        return
+    end
+
     if cmd == "set" then
         local name, path = rest:match("^(%S+)%s+(.+)$")
         if not name or not path then
@@ -463,6 +480,17 @@ local function handleSlash(msg)
             target = UnitName("player")
         end
 
+        playSoundForName(target)
+        return
+    end
+
+    if cmd == "selftest" then
+        local target = rest
+        if target == "" then
+            target = UnitName("player")
+        end
+
+        printMsg("Self-testing sound for " .. tostring(shortName(target)))
         playSoundForName(target)
         return
     end
