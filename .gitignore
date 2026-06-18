@@ -1,0 +1,26 @@
+# Windows / macOS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor folders
+.idea/
+.vscode/
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Packaged addon archives
+*.zip
+*.7z
+*.rar
+
+# Local build / export folders
+dist/
+build/
+out/
+outputs/

@@ -1,0 +1,8 @@
+## Interface: 20504
+## Title: RaidRIP
+## Notes: Plays per-player death sounds for raid and party deaths.
+## Author: Codex
+## Version: 0.1.0
+## SavedVariables: RaidRIPDB
+
+RaidRIP.lua
